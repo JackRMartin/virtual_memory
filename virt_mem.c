@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <time.h>
 
 #define ARGC_ERROR 1
 #define FILE_ERROR 2
@@ -21,12 +22,16 @@ void getpage_offset(unsigned int x) {
 }
 
 int main(int argc, const char * argv[]) {
-  int hit_count = 0;
-  int miss_count = 0;
+  int page_faults = 0;
+  int attempts = 0;
   int page_table[256];
+  int visited[256];
+
+  srand(time(0));
 
   for(int i = 0; i < 256; i++){
       page_table[i] = 0;
+      visited[i] = 0;
   }
 
   FILE* fadd = fopen("addresses.txt", "r");
@@ -42,9 +47,8 @@ int main(int argc, const char * argv[]) {
 
       // not quite correct -- should search page table before creating a new entry
       //   e.g., address # 25 from addresses.txt will fail the assertion
-      // TODO:  add page table code
       // TODO:  add TLB code
-  while (frame < 20) {
+  while (frame < 256) {
     fscanf(fcorr, "%s %s %d %s %s %d %s %d", buf, buf, &virt_add,
            buf, buf, &phys_add, buf, &value);  // read from file correct.txt
 
@@ -53,6 +57,14 @@ int main(int argc, const char * argv[]) {
     offset = getoffset(logic_add);
     
     physical_add = frame++ * FRAME_SIZE + offset;
+    attempts++;
+    int index = rand() % 256;
+    if(visited[index] == 0){
+        page_table[index] = physical_add;
+        visited[index] = 1;
+    } else {
+        page_faults++;
+    }
     
     assert(physical_add == phys_add);
     // todo: read BINARY_STORE and confirm value matches read value from correct.txt
@@ -63,8 +75,7 @@ int main(int argc, const char * argv[]) {
   fclose(fadd);
   
   printf("ALL logical ---> physical assertions PASSED!\n");
-  printf("!!! This doesn't work passed entry 24 in correct.txt, because of a duplicate page table entry\n");
-  printf("--- you have to implement the PTE and TLB part of this code\n");
+  printf("We made %d page fault lookups, with %d page faults!\n\n", attempts, page_faults);
   printf("\n\t\t...done.\n");
   return 0;
 }
