@@ -13,6 +13,7 @@
 //-------------------------------------------------------------------
 unsigned int getpage(size_t x) { return (0xff00 & x) >> 8; }
 unsigned int getoffset(unsigned int x) { return (0xff & x); }
+unsigned int get_add(unsigned int x, unsigned int offset) { return (x << 8) | offset; }
 
 void getpage_offset(unsigned int x) {
   unsigned int page = getpage(x);
@@ -22,15 +23,22 @@ void getpage_offset(unsigned int x) {
 }
 
 int main(int argc, const char * argv[]) {
+  // page fault means not in page page_table
+  // if you get a page that is not in apge table (i.e. -1) we read nextavailable from the backing BINARY_STORE
+  // and use this data to find the page
+
+  int next_available = 0;
   int page_faults = 0;
   int attempts = 0;
-  int page_table[256];
+  unsigned int page_table[256];
   int visited[256];
+  unsigned int physical_mem[256 * 256];
+  unsigned int tlb[16];
 
   srand(time(0));
 
   for(int i = 0; i < 256; i++){
-      page_table[i] = 0;
+      page_table[i] = -1;
       visited[i] = 0;
   }
 
@@ -40,6 +48,9 @@ int main(int argc, const char * argv[]) {
   FILE* fcorr = fopen("correct.txt", "r");
   if (fcorr == NULL) { fprintf(stderr, "Could not open file: 'correct.txt'\n");  exit(FILE_ERROR);  }
 
+  FILE* fbin = fopen("BACKING_STORE.bin", "r");
+  if(fbin == NULL) { fprintf(stderr, "Could not open file: 'BACKING_STORE.bin'\n"); exit(FILE_ERROR); }
+
   char buf[BUFLEN];
   unsigned int page, offset, physical_add, frame = 0;
   unsigned int logic_add;                  // read from file address.txt
@@ -48,24 +59,31 @@ int main(int argc, const char * argv[]) {
       // not quite correct -- should search page table before creating a new entry
       //   e.g., address # 25 from addresses.txt will fail the assertion
       // TODO:  add TLB code
-  while (frame < 256) {
+  while (!feof(fadd)) {
     fscanf(fcorr, "%s %s %d %s %s %d %s %d", buf, buf, &virt_add,
            buf, buf, &phys_add, buf, &value);  // read from file correct.txt
 
     fscanf(fadd, "%d", &logic_add);  // read from file address.txt
     page = getpage(logic_add);
     offset = getoffset(logic_add);
-    
-    physical_add = frame++ * FRAME_SIZE + offset;
+
+
+
     attempts++;
-    int index = rand() % 256;
-    if(visited[index] == 0){
-        page_table[index] = physical_add;
-        visited[index] = 1;
-    } else {
-        page_faults++;
+    if(page_table[page] == -1){
+      page_faults++;
+      page_table[page] = next_available++;
+      char* p = &physical_mem[256 * page_table[page]]; // read into here with .bin file
+
+      // todo update TLB
+        //page_table[page] = physical_add;
+        //visited[page] = 1;
     }
-    
+
+    fseek(fbin, sizeof(page_table[page]), SEEK_SET);
+    physical_add = page_table[page] * FRAME_SIZE + offset;
+
+    printf("Address from file is %d\n Physical Address %d \n", virt_add, physical_add);
     assert(physical_add == phys_add);
     // todo: read BINARY_STORE and confirm value matches read value from correct.txt
     printf("logical: %5u (page:%3u, offset:%3u) ---> physical: %5u -- passed\n", logic_add, page, offset, physical_add);
@@ -73,7 +91,7 @@ int main(int argc, const char * argv[]) {
   }
   fclose(fcorr);
   fclose(fadd);
-  
+
   printf("ALL logical ---> physical assertions PASSED!\n");
   printf("We made %d page fault lookups, with %d page faults!\n\n", attempts, page_faults);
   printf("\n\t\t...done.\n");
